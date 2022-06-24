@@ -1,0 +1,433 @@
+---
+title: "Analysis of International Soccer Matches Data from 1872 to 2021"
+author: "Talha Matal"
+date: "6/22/2021"
+output:
+  html_document:     
+    fig_width: 8
+    code_folding: hide
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+    df_print: paged  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=8, fig.height=4,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+```{r ,echo=FALSE,message=FALSE}
+df <- read.csv("results.csv",header=TRUE)
+library(plotly)
+library(sampling)
+library(knitr)
+library(tidyverse)
+library(wordcloud2)
+df.tibble <- as.tibble(df)
+```
+## Dataset Details
+
+This dataset includes 42,183 results of international football matches starting from the very first official match in 1872 up to 2021. The matches range from FIFA World Cup to FIFI Wild Cup to regular friendly matches. The matches are strictly men's full internationals and the data does not include Olympic Games or matches where at least one of the teams was the nation's B-team, U-23 or a league select team.
+
+```{r,echo=TRUE}
+df.tibble
+```
+
+## Inspiration for Analysis
+
+There are a number of inspiration for analyzing the dataset above some of them are listed below and these are the ones which have been focused on for the purpose of this project.
+  
+  1. Details of the matches with the most number of goals scored (home and away).
+  2. Top five matches with the most number of goals scored.
+  3. List the top 20 countries from the perspective of the number of matches played.
+  4. List the top 20 countries from the perspective of the number of matches won.
+  5. List the top 20 countries from the perspective of the number of goals scored.
+  6. Countries hosting the most number of matches. 
+  7. Cities of the world hosting the most number of matches.
+  8. Is home advantage something that is true?
+  9. Which country is the best of all the teams?
+
+
+## Data Preparation
+The data that was provided is loaded in a data frame and then some manipulation is done on the data. The data for the total goals scored in a match, the winning team name (if there is one otherwise DRAW is added to the field) and lastly if home team won or the away team won is added to a column called homewin in the data frame. From this data there were further manipulation that were done by creating a new data frame with rows for each country name and the columns showing the data for the matches played by the country in home, away, in neutral venues as home and as away team. Based on this the total matches played for each team was calculated. Then the data for number of goals scored in each match was manipulated to find the data for each country for the number of goals scored as home and away team and the total goals scored. Also the number of wins for each country was calculated and added to the data frame. Lastly the number of goals scored per match ratio and the percentage of wins for each country was calculated and added to the data frame with the country data. 
+
+
+```{r ,echo=TRUE}
+#Add the winning team, total score and if home team won data
+df.tibble <- df.tibble %>% add_column(winteam = if_else(.$home_score>.$away_score,.$home_team,if_else(.$home_score<.$away_score,.$away_team,"Draw")),
+homewin = if_else(.$home_score>.$away_score,"Home Team Won",if_else(.$home_score<.$away_score,"Away Team Won","Draw")))
+
+df.tibble <- df.tibble %>% mutate(total_score = home_score + away_score)
+
+
+#Data manipulation for the matches as home, away and as home and away (on neutral venue)
+
+home.team <- full_join(df.tibble %>% filter(neutral==FALSE) %>% group_by(home_team) %>% summarise(Home=n()),df.tibble %>% filter(neutral==TRUE) %>% group_by(home_team) %>% summarise(As_Home=n()),by="home_team")
+
+away.team <- full_join(df.tibble %>% filter(neutral==FALSE) %>% group_by(away_team) %>% summarise(Away=n()),df.tibble %>% filter(neutral==TRUE) %>% group_by(away_team) %>% summarise(As_Away=n()),by="away_team")
+
+matches <- full_join(home.team,away.team,by=c("home_team"="away_team"))
+matches <- matches %>% rowwise() %>% mutate(Total_matches = sum(Home,Away,As_Home,As_Away,na.rm = TRUE))
+colnames(matches)[1] <- c("Country")
+
+#Data manipulation for the total wins by each country
+wins <- df.tibble %>% group_by(winteam) %>% summarise(No_of_wins=n())
+matches <- full_join(matches,wins,by=c("Country"="winteam")) %>% replace_na(list(Home = 0,Away = 0, As_Home = 0, As_Away =0,No_of_wins = 0)) %>% filter(Country != "Draw")
+
+#Data manipulation for the goals scored by each country home , away and total goals
+home.goals <- df.tibble %>% group_by(home_team) %>% summarise(Home_goals = sum(home_score))
+away.goals <- df.tibble %>% group_by(away_team) %>% summarise(Away_goals = sum(away_score))
+
+goals <- full_join(home.goals,away.goals,by=c("home_team"="away_team"))
+goals <- goals %>% rowwise() %>% mutate(Total_goals = sum(Home_goals,Away_goals,na.rm = TRUE)) %>% replace_na(list(Home_goals = 0,Away_goals = 0, Total_goals = 0))
+colnames(goals)[1] <- c("Country")
+
+#data frame for each country with the matches  played, goals scored and the no of wins
+country <- full_join(matches,goals,by="Country")
+
+
+#Add the data for the goals scored per match and the win percentage for each country
+country$goals_per_match <- round(country$Total_goals/country$Total_matches,digits = 2)
+country$win_percentage <- round(100*country$No_of_wins/country$Total_matches,digits = 2)
+country
+```
+
+
+## Data Analysis
+The data for each of soccer matches played till date is a very crucial data and it can help us in analyzing the data to see how each of the countries playing the sport have faired while playing the sport. There has always been a debate of weather the European or South American countries have done well and it can also help us in analyzing which countries will continue to dominate the world of soccer going forward. This analysis will also help us in deciding if the home advantage is definitely something that plays a role in the winning based on statistical data.
+
+### The Matches with the most number of goals scored
+Below you can see the details for the match where the most number of goals have ever been scored in an international men soccer game.
+```{r,echo=TRUE,results='asis'}
+max.total.score <- df.tibble %>% filter(total_score == max(total_score))
+kable(max.total.score)
+```
+Below are the details for the match where the home team totally thrashed the away team.
+```{r,echo=TRUE,results='asis'}
+max.home.score <- df.tibble %>% filter(home_score == max(home_score))
+kable(max.home.score)
+```
+In the below match the away team returned the favor by thrashing the home team which is considered as humiliation for any team playing at home.
+```{r,echo=TRUE,results='asis'}
+max.away.score <- df.tibble %>% filter(away_score == max(away_score))
+kable(max.away.score)
+```
+So the most number of total and home goals scored were actually in the same match by Australia against American Samoa back in 2001. And apparently North Korea is the country which has scored the most of goals as an away team in a single match against Guam back in 2005.
+
+### Top five matches in terms of goals scored
+Below is the list of top 5 matches with the most number of goals scored. 
+```{r,echo=TRUE,results='asis'}
+rearranged <- df.tibble %>% arrange(desc(total_score))
+kable(rearranged[1:5,])
+```
+Looking at the data it looks like most of the goals scored have been by the team belonging to the Oceania region like Australia, Tahiti, Fiji against the teams from the same region. This leads to the fact that the quality of the soccer in that region is not up to at a very high quality as some of the better teams are scoring such heavily against the weaker teams and winning by such large margins.
+
+## Top 20 countries
+Below I am analyzing the data for the top 20 countries in terms of 3 main points.
+
+1. Number of matches played.
+2. number of matches won.
+3. Number of Goals scored.
+
+### Number of matches Played 
+Based on the data I can see that Sweden has played the most number of matches 1032 followed by England (1022), Brazil (990), Argentina(987) and Germany(963) making up the top 5 teams in terms of the number of matches played all time since the very first match till the latest data from early June 2021.
+```{r,echo=TRUE}
+country$Country <- factor(country$Country, levels=country$Country[order(country$Total_matches,decreasing = TRUE)])
+top_20 <- arrange(country,desc(Total_matches))[1:20,]
+p <- plot_ly (top_20,x=~Country,y=~Total_matches,type='bar')
+p <- p %>% layout(title = 'Most Number of matches played',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of Matches",range = c(0,1200)))
+p
+```
+
+The breakdown of the data for the number of home, away and the matches played at neutral venues is also given below. Sweden although has played the most number of matches but most have been as either at home in Sweden or as away team where the other team is also playing at home. Where as the number of matches played at neutral venues typically for tournaments is lesser as compared to Brazil, Argentina, Uruguay, Mexico. The below data shows another important thing that the South American countries, Mexico and South Korea have played a high number of matches at neutral venues than their European counterparts.  
+```{r,echo=TRUE}
+p <- plot_ly (top_20,x=~Country,y=~Home,type='bar',name='Home Matches')
+p <- p %>% add_trace (y=~Away,name='Away Matches')
+p <- p %>% add_trace (y=~(As_Home+As_Away), name ='Neutral Matches')
+p <- p %>% layout(title = 'Matches Breakdown',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of Matches",range = c(0,600,100)))
+p
+```
+
+### Number of matches Won
+Based on the data I can see that Brazil tops the list of the countries with the most number of wins (631) followed by England(582), Germany(561), Argentina(529), Sweden(508) making the top 5 countries. This data is pretty much similar to the data above for the number of matches played with the same countries making the top 5 list as above but in just different order. The two countries which stand out in this list are Spain and Zambia which are although not part of the top teams for the most number of matches but have won a good amount of matches to make them part of top 20 teams. The two countries to miss out are Chile and Norway and Zambia being the only country from Africa to make this list. 
+```{r,echo=TRUE}
+country$Country <- factor(country$Country, levels=country$Country[order(country$No_of_wins,decreasing = TRUE)])
+top_20 <- arrange(country,desc(No_of_wins))[1:20,]
+p <- plot_ly(top_20,x=~Country,y=~No_of_wins,type='bar')
+p <- p %>% layout(title = 'Most Number of matches won',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of Wins",range = c(0,700)))
+p
+```
+
+### Number of goals scored
+The top crown for the most number of goals scored goes England who have scored 2232 goals in the soccer matches they have played. Following in the second is Brazil with 2170 and Germany in the third with 2152 goals followed by Sweden, Hungary and Argentina. This list is pretty much the same as the two list above where most of the countries are the same with the most matches played and the most number of wins. The only difference is Russia which is not present in the above list. 
+```{r,echo=TRUE}
+country$Country <- factor(country$Country, levels=country$Country[order(country$Total_goals,decreasing = TRUE)])
+top_20 <- arrange(country,desc(Total_goals))[1:20,]
+p <- plot_ly(top_20,x=~Country,y=~Total_goals,type='bar')
+p <- p %>% layout(title = 'Most Number of goals scored',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of goals",range = c(0,2500)))
+p
+```
+Below is a breakdown of the home and away goals scored by each of the top 20 countries in the above list. This data represents that Brazil has scored the most number of home goals almost twice the number of goals they have scored in away games making them a very strong home scoring team. On the other hand England has almost the same amount of home and away goals with a small difference of 100 goals making them competitive in both home and away conditions.Where as Uruguay has scored more goals in away matches as compared to goals in home matches so they can be considered to be a good team in away matches in terms of goal scoring. 
+```{r,echo=TRUE}
+p <- plot_ly(top_20,x=~Country,y=~Home_goals,type='bar',name='Home Goals')
+p <- p %>% add_trace(y=~Away_goals,name='Away Goals')
+p <- p %>% layout(title = 'Goals Breakdown',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of goals",range = c(0,1600)))
+p
+```
+
+## Countries hosting the most number of matches
+The United States is the top country in terms of the number of matches it has hosted by far with 1169 matches followed by France with 815 matches with England(706) and Malaysia(652) following after that. 
+```{r,echo=TRUE}
+matches_per_country <- df.tibble %>% group_by(country) %>% summarise(Hosted_Matches = n()) %>% arrange(desc(Hosted_Matches))
+matches_per_country$country <- factor(matches_per_country$country, 
+                                      levels = matches_per_country$country[order(matches_per_country$Hosted_Matches,decreasing = TRUE)])
+top_20 <- matches_per_country[1:20,]
+p <- plot_ly(top_20,x=~country,y=~Hosted_Matches,type='bar')
+p <- p %>% layout(title = 'Top 20 Hosting Countries',
+                  xaxis = list(title = "Country"),
+                  yaxis = list (title = "No of Matches"))
+p
+```
+
+## Cities of the world hosting the most number of matches
+This data represents a mix bag with almost cities from the entire globe in the list of top 20 cities with the number of soccer matches hosted. Interestingly the top three are all from Asia whereas the Asian countries have not faired as well in soccer as compared to the European or South American cities. This is due to the fact that as soccer is not that popular of a sport in Asia than it is in Europe or South America that the number of cities with international level soccer stadiums is lesser so the big cities like Kuala Lumpur, Doha and Bangkok hosting a lot of soccer matches either as part of a tournament or friendly matches also for some other countries in the region.
+```{r,echo=TRUE}
+matches_per_city <- df.tibble %>% group_by(city) %>% summarise(Hosted_Matches = n()) %>% arrange(desc(Hosted_Matches))
+matches_per_city$city <- factor(matches_per_city$city, 
+                                      levels = matches_per_city$city[order(matches_per_city$Hosted_Matches,decreasing = TRUE)])
+top_20 <- matches_per_city[1:20,]
+p <- plot_ly(top_20,x=~city,y=~Hosted_Matches,type='bar')
+p
+```
+
+## Is home advantage something that is true?
+There is a saying is sports that home advantage is something that is very important for any team and most of the teams playing at home always have a upper hand and tend to win more often than away teams or teams playing away from their home. Based on the data set that we had I captured the data for the home of time the home team won and the number of times home team won and the number of draws and the proportion of those is given in the below pie chart. This chart represents the fact that the home team won 50.4% of the matches where as 26.4% of the time away team had the upper hand with 23.1% of the matches ending in a draw. This data proves the theory that the home end is definitely at advantage with it being only 26.4% matches at the loosing side.  
+```{r,echo=TRUE}
+
+homewin.data <- df.tibble %>% filter(neutral == FALSE) %>% group_by(homewin) %>% summarise(Frequency=n())
+colnames(homewin.data)[1] <- c("Result")
+p <- plot_ly(homewin.data,labels=~Result,values=~Frequency,type='pie',
+             textinfo='label+percent')
+p <- p%>% layout(title="Percentage of Wins and Draws")
+p
+```
+
+## Which country is the best of all the teams?
+There is always a debate in the soccer world as to which country is the best team to play the sport with some arguing in support of Brazil some with Germany some with Argentina and some of course with England. Here I look at this from statistical point of view as to which teams have done well by plotting the number of goals per game with the percentage win for the country based on the data set that we have. For the below plot I have filtered the data set for the countries which have played more than 800 matches overall to provide us a better picture.
+```{r,echo=TRUE}
+data <- country %>% filter(Total_matches > 800) %>% arrange(desc(goals_per_match))
+p <- plot_ly(data,x=~goals_per_match,y=~win_percentage,type='scatter',mode='markers',text=~Country)
+p <- p%>% add_text(textposition = "top right",)
+p <- p%>% layout(title='Goals and Win Percentage',showlegend =FALSE,
+                xaxis = list(title="No of goals per Match"),
+                yaxis = list(title="Win Percentage"))
+p
+```
+Based on the plot we can see that Brazil, Germany and England are in the top countries in terms of both the number of goals scored per match and the win percentage. Then we have other countries like Argentina , Italy, France, Mexico, South Korea who sit in the middle with 1.7 - 2 goals per match and 45-55 win percentage. The two countries larking below are Norway and Switzerland with around 37 win percentage and around 1.5 goals per match. Looking at this I can say that Brazil is the best country to have played the sport with 2.19 goals per match and 63.74 percent of matches won. Although Germany has better goals scored per match 2.23 but the win percentage is lesser as compared to Brazil as there is a significant difference in the win percentage as compared to the goals scored.
+
+## Distribution of the Number of goals scored per match 
+One important variable that we need to analyze is the number of goals scored per match.
+Below is the summary output for the total number of goals scored in a match.
+```{r,echo=TRUE}
+summary(df.tibble$total_score)
+```
+similarly the summary for the goals scored by home team in a match.
+```{r,echo=TRUE}
+summary(df.tibble$home_score)
+```
+similarly the summary for the goals scored by away team in a match.
+```{r,echo=TRUE}
+summary(df.tibble$away_score)
+```
+The box plots for the total goals, home team goals and away team goals scored in a match is shown below.
+```{r,echo=TRUE}
+p <- plot_ly(x=df.tibble$total_score,type="box",name = "Total Goals Scored")
+p <- p %>% add_boxplot(x=df.tibble$home_score,name = "Home Team Goals")
+p <- p %>% add_boxplot(x=df.tibble$away_score, name = "Away Team Goals")
+p
+```
+From these box plots we can see that the Away Team Goals are having a higher right whisker with the upper fence up to 6 goals but the interquartile range is only 2 and 589 matches with scores for away team goals which are outliers for the data set. Where as on the other hand we can see that the Home team goals have smaller interquartile range of 1 and a smaller right whisker with the upper fence of 3 goals but for the home team goals the number of outliers are much more like 5296 games are considered to be outliers for this. For the total goals the interquartile range is 3 goals with the median of 3 goals per match and the upper fence of 8 goals per match also there are 694 games which are outliers. 
+
+The histogram for the total number of goals scored in the match is shown below.
+```{r,echo=TRUE}
+p <- plot_ly(df.tibble,x=~total_score ,type='histogram',name='Histogram') %>% 
+    layout (title='Histogram for Total Score',
+            xaxis = list(title = "Total Score",range = c(-5,20)),
+            yaxis = list (title = "No of Matches"))
+p
+```
+The mean and the standard deviation for the total goals scored per match is as below.
+```{r,echo=TRUE}
+paste("Mean number of goals scored are:",round(mean(df.tibble$total_score),digits = 3))
+paste("Standard Deviation for the total number of goals scored are:",round(sd(df.tibble$total_score),digits = 3))
+```
+
+### Central Limit Theorem
+The Central Limit Theorem states that the distribution of the sample means for a given sample size of the population has the shape of the normal distribution. This is important because there are a lot of statistical procedures that require normality in the data set.  To demonstrate this theorem I have sampled the total goals scored data  by picking up 5000 random samples with sample sizes of 10,20,30 and 40. Below are the means and standard deviation along with the histogram for the sample means.
+```{r,echo=TRUE,warning=FALSE}
+pop.mean <- mean(df.tibble$total_score)
+pop.sd <- sd(df.tibble$total_score)
+
+paste("Population Mean:",round(pop.mean,digits = 3))
+paste("Population SD:",round(pop.sd,digits = 3))
+
+
+samples <- 5000
+
+xbar <- numeric(samples)
+
+
+size = c(10,20,30,40)
+plot <- numeric(length(size))
+
+for (i in 1:length(size)) {
+  
+  for (j in 1:samples) {
+    xbar[j] <- mean(sample(df.tibble$total_score, size = size[i], replace = FALSE))
+  }
+  XBAR <- data.frame("Mean" =xbar)
+  plot[i] <- plot_ly(XBAR,x=~Mean ,type='histogram',name= paste("Sample Size",size[i])) %>% 
+    layout(xaxis = list(range= c(0.5,5)))
+  
+  cat("Sample Size = ", size[i], " Mean = ", mean(xbar),
+      " SD = ", sd(xbar), "\n")
+}
+p <- subplot(plot,nrows = 2) %>% layout(title = 'Central Limit Theorem')
+p
+```
+From the histograms we can see that the sample means of the total goal scored for each of the sample sizes follows a normal distribution with mean almost same as the original population of around 2.9 but the standard deviation for each of the data set decreases as the sample size is increased and the sample means data is more structured around the mean of the population.
+
+### Sampling of the Total number of goals
+In research terms a sample is a group of people, objects, or items that are taken from a larger population for measurement. The sample should be representative of the population to ensure that we can generalize the findings from the research sample to the population as a whole.There are two types of sampling methods: Probability sampling involves random selection, allowing you to make strong statistical inferences about the whole group. Non-probability sampling involves non-random selection based on convenience or other criteria, allowing you to easily collect data.The common methods used in probability sampling are simple random sampling, systematic sampling, stratified sampling, and cluster sampling.
+
+For my data set for the total number of goals scored per match I have collected and analyzed the data set based on the simple random sampling, systematic sampling and the stratified sampling methods. The result for these are shown below in terms of the bar charts for each of the sampling method and the original population.
+```{r,echo=TRUE,warning=FALSE}
+
+#Order and subset the data with tournament matches more than 100 
+
+Tournament.pop <- df.tibble %>% arrange(tournament) %>% group_by(tournament) %>% summarise(No_of_matches = n()) %>% filter(No_of_matches >100)
+ordered.subset.data <- inner_join(df.tibble,Tournament.pop,by="tournament") %>% select(-No_of_matches) %>%arrange(tournament)
+
+Tournament.pop$tournament <- factor(Tournament.pop$tournament, 
+                                levels = Tournament.pop$tournament[order(Tournament.pop$No_of_matches,decreasing = TRUE)])
+population <- plot_ly(Tournament.pop,x=~tournament,y=~No_of_matches,type='bar',name = "Population")
+
+per.friendly <- 100 * Tournament.pop[Tournament.pop$tournament == "Friendly","No_of_matches"]/sum(Tournament.pop$No_of_matches)
+per.FIFqual <- 100 * Tournament.pop[Tournament.pop$tournament == "FIFA World Cup qualification","No_of_matches"]/sum(Tournament.pop$No_of_matches)
+per.UEFAqual <- 100 * Tournament.pop[Tournament.pop$tournament == "UEFA Euro qualification","No_of_matches"]/sum(Tournament.pop$No_of_matches)
+
+
+sample.size <- 500
+set.seed(1903)
+
+
+#Simple random sampling without replacement
+s <- srswor(sample.size,nrow(ordered.subset.data))
+sample.srswor <- ordered.subset.data[s!=0,]
+
+Tournament.srswor <- sample.srswor %>% arrange(tournament) %>% group_by(tournament) %>% summarise(No_of_matches = n())
+Tournament.srswor$tournament <- factor(Tournament.srswor$tournament, 
+                                levels = Tournament.srswor$tournament[order(Tournament.srswor$No_of_matches,decreasing = TRUE)])
+plot.srswor <- plot_ly(Tournament.srswor,x=~tournament,y=~No_of_matches,type='bar', name = "SRSWOR")
+
+per.friendly.srswor <- 100 * Tournament.srswor[Tournament.srswor$tournament == "Friendly","No_of_matches"]/sum(Tournament.srswor$No_of_matches)
+per.FIFqual.srswor <- 100 * Tournament.srswor[Tournament.srswor$tournament == "FIFA World Cup qualification","No_of_matches"]/sum(Tournament.srswor$No_of_matches)
+per.UEFAqual.srswor <- 100 * Tournament.srswor[Tournament.srswor$tournament == "UEFA Euro qualification","No_of_matches"]/sum(Tournament.srswor$No_of_matches)
+
+
+
+#Systematic sampling
+N <- nrow(ordered.subset.data)
+n <- sample.size
+k <- ceiling(N/n)
+r <- sample(k, 1)
+s <- seq( r, by = k,length = n)
+
+sample.systematic <- ordered.subset.data[s,]
+
+Tournament.sys <- sample.systematic %>% arrange(tournament) %>% group_by(tournament) %>% summarise(No_of_matches = n()) %>% na.exclude(tournament)
+
+Tournament.sys$tournament <- factor(Tournament.sys$tournament, 
+                                levels = Tournament.sys$tournament[order(Tournament.sys$No_of_matches,decreasing = TRUE)])
+plot.systematic <- plot_ly(Tournament.sys,x=~tournament,y=~No_of_matches,type='bar', name = "Systematic")
+
+per.friendly.sys <- 100 * Tournament.sys[Tournament.sys$tournament == "Friendly","No_of_matches"]/sum(Tournament.sys$No_of_matches)
+per.FIFqual.sys <- 100 * Tournament.sys[Tournament.sys$tournament == "FIFA World Cup qualification","No_of_matches"]/sum(Tournament.sys$No_of_matches)
+per.UEFAqual.sys <- 100 * Tournament.sys[Tournament.sys$tournament == "UEFA Euro qualification","No_of_matches"]/sum(Tournament.sys$No_of_matches)
+
+
+#Stratified sampling
+
+
+#Proportion sizes
+
+table <- ordered.subset.data %>% arrange(tournament) %>% group_by(tournament) %>% summarise(No_of_matches = n())
+prop.sizes <- round(sample.size *table$No_of_matches/sum(table$No_of_matches))
+
+
+
+while (sum(prop.sizes) < sample.size){
+  prop.sizes[which.min(prop.sizes)] <- prop.sizes[which.min(prop.sizes)] + 1
+}
+
+while (sum(prop.sizes) > sample.size){
+  prop.sizes[which.max(prop.sizes)] <- prop.sizes[which.max(prop.sizes)] - 1
+}
+
+st <- strata(ordered.subset.data, stratanames = c("tournament"),
+             size = prop.sizes, method = "srswor")
+sample.strat <- getdata(ordered.subset.data,st)
+
+Tournament.strat <- sample.strat %>% arrange(tournament) %>% group_by(tournament) %>% summarise(No_of_matches = n())
+Tournament.strat$tournament <- factor(Tournament.strat$tournament, 
+                                levels = Tournament.strat$tournament[order(Tournament.strat$No_of_matches,decreasing = TRUE)])
+plot.strat <- plot_ly(Tournament.strat,x=~tournament,y=~No_of_matches,type='bar',name = "Stratified")
+
+per.friendly.strat <- 100 * Tournament.strat[Tournament.strat$tournament == "Friendly","No_of_matches"]/sum(Tournament.strat$No_of_matches)
+per.FIFqual.strat <- 100 * Tournament.strat[Tournament.strat$tournament == "FIFA World Cup qualification","No_of_matches"]/sum(Tournament.strat$No_of_matches)
+per.UEFAqual.strat <- 100 * Tournament.strat[Tournament.strat$tournament == "UEFA Euro qualification","No_of_matches"]/sum(Tournament.strat$No_of_matches)
+
+
+
+p <- subplot(population,plot.srswor,plot.systematic,plot.strat,nrows = 2)
+p
+
+paste("Population Data")
+paste("Population:",paste0(round(per.friendly,digits = 2),"%"),"of matches were friendly matches")
+paste("Population:",paste0(round(per.FIFqual,digits = 2),"%"),"of matches were FIFA qualification matches")
+paste("Population:",paste0(round(per.UEFAqual,digits = 2),"%"),"of matches were UEFA qualification matches")
+
+paste("Simple Random Sampling Data")
+paste("SRSWOR:",paste0(round(per.friendly.srswor,digits = 2),"%"),"of matches were friendly matches")
+paste("SRSWOR:",paste0(round(per.FIFqual.srswor,digits = 2),"%"),"of matches were FIFA qualification matches")
+paste("SRSWOR:",paste0(round(per.UEFAqual.srswor,digits = 2),"%"),"of matches were UEFA qualification matches")
+
+paste("Systematic Sampling Data")
+paste("Systematic:",paste0(round(per.friendly.sys,digits = 2),"%"),"of matches were friendly matches")
+paste("Systematic:",paste0(round(per.FIFqual.sys,digits = 2),"%"),"of matches were FIFA qualification matches")
+paste("Systematic:",paste0(round(per.UEFAqual.sys,digits = 2),"%"),"of matches were UEFA qualification matches")
+
+paste("Stratified Sampling Data")
+paste("Stratified:",paste0(round(per.friendly.strat,digits = 2),"%"),"of matches were friendly matches")
+paste("Stratified:",paste0(round(per.FIFqual.strat,digits = 2),"%"),"of matches were FIFA qualification matches")
+paste("Stratified:",paste0(round(per.UEFAqual.strat,digits = 2),"%"),"of matches were UEFA qualification matches")
+
+```
+
+## Conclusion
+Based on the analysis of the data set we can conlcude that Brazil, Germany, and England are the major forces of the international men's soccer arena. Likes of other countries including Argentina, Sweden, Italy, France are not that far behind but when it comes to the top teams i guess the former three are the leaders. From the analysis of the data we also can conclude that the home team is always at a significant advantage with the home team winning around 50% of the matches where as the away team won only 26% of the matches where as the rest ended in a Draw.
+
+```{r echo =TRUE}
+wordcloud2(data=country %>%arrange(desc(No_of_wins)) %>% select(Country,No_of_wins))
+```
